@@ -151,8 +151,8 @@
             renderView();
         };
 
-        const addGrowthMeasurement = (plantId, measurement) => {
-            if (!measurement) {
+        const addGrowthMeasurement = (plantId, measurement ,imageData) => {
+            if (!measurement && !imageData) {
                 modalMessage.textContent = "Please add a measurement to log growth.";
                 modalConfirmBtn.style.display = 'none';
                 modalCancelBtn.textContent = 'OK';
@@ -165,6 +165,8 @@
                 const newEntry = {
                     date: new Date().toISOString(),
                     measurement: measurement,
+                    // ADDED: Store the image data as a Base64 string
+                    image: imageData,
                 };
                 plants[plantIndex].growthHistory.push(newEntry);
                 savePlantsToLocalStorage();
@@ -271,15 +273,18 @@
                             <div class="space-y-4">
                                 ${plant.growthHistory.length > 0 ? plant.growthHistory.sort((a, b) => new Date(b.date) - new Date(a.date)).map(entry => `
                                     <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-                                        <p class="text-gray-800 font-semibold">${entry.measurement}</p>
-                                        <p class="text-gray-600 text-sm mt-1">${new Date(entry.date).toLocaleString()}</p>
-                                    </div>
+                                      ${entry.image ? `<img src="${entry.image}" alt="Plant growth photo" class="w-full h-auto rounded-md mb-2 object-cover">` : ''}
+                                      ${entry.measurement ? `<p class="text-gray-800 font-semibold">${entry.measurement}</p>` : ''}
+                                      <p class="text-gray-600 text-sm mt-1">${new Date(entry.date).toLocaleString()}</p>
+                                  </div>
                                 `).join('') : `<p class="text-gray-500">No growth measurements logged yet.</p>`}
                             </div>
                             <div class="mt-6">
-                                <label class="block text-gray-700 font-bold mb-2">Log New Measurement</label>
-                                <input type="text" id="newGrowthMeasurement" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:border-green-500" placeholder="e.g., 'Height: 15cm', 'New leaves emerging'" />
-                                <button id="add-growth-btn" class="w-full bg-green-600 text-white py-3 rounded-xl shadow-md hover:bg-green-700 transition duration-300 mt-4">Add Measurement</button>
+                                <label class="block text-gray-700 font-bold mb-2">Log New Update</label>
+                                <input type="text" id="newGrowthMeasurement" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:border-green-500 mb-4" placeholder="e.g., 'Height: 15cm', 'New leaves emerging'" />
+                                <label class="block text-gray-700 font-bold mb-2" for="plantImage">Add an Image</label>
+                                <input type="file" id="plantImage" accept="image/*" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:border-green-500" />
+                                <button id="add-growth-btn" class="w-full bg-green-600 text-white py-3 rounded-xl shadow-md hover:bg-green-700 transition duration-300 mt-4">Add Update</button>
                             </div>
                         </div>
                     </div>
@@ -289,10 +294,25 @@
             document.getElementById('back-to-list').addEventListener('click', () => { currentView = 'list'; renderView(); });
             
             const newGrowthMeasurementInput = document.getElementById('newGrowthMeasurement');
+            const plantImageInput = document.getElementById('plantImage');
             document.getElementById('add-growth-btn').addEventListener('click', () => {
                 const measurement = newGrowthMeasurementInput.value;
-                addGrowthMeasurement(plant.id, measurement);
-                newGrowthMeasurementInput.value = '';
+                const imageFile = plantImageInput.files[0];
+
+                if (imageFile) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        addGrowthMeasurement(plant.id, measurement, reader.result);
+                        newGrowthMeasurementInput.value = '';
+                        plantImageInput.value = '';
+                    };
+                    reader.readAsDataURL(imageFile);
+                } else {
+                   addGrowthMeasurement(plant.id, measurement, null);
+                    newGrowthMeasurementInput.value = '';
+                    plantImageInput.value = '';
+                }
+               
             });
         };
 
