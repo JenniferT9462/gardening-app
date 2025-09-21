@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Gardening Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f9fafb;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.4);
+        }
+        .modal-content {
+            background-color: #fff;
+            margin: 15% auto;
+            padding: 20px;
+            border-radius: 12px;
+            width: 80%;
+            max-width: 400px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen text-gray-800 antialiased">
+
+    <div id="modal-container" class="modal">
+        <div class="modal-content">
+            <p id="modal-message" class="text-lg font-semibold mb-4 text-center"></p>
+            <div class="flex justify-center space-x-4">
+                <button id="modal-confirm" class="bg-red-500 text-white px-4 py-2 rounded-lg shadow-md hover:bg-red-600 transition">Delete</button>
+                <button id="modal-cancel" class="bg-gray-400 text-white px-4 py-2 rounded-lg shadow-md hover:bg-gray-500 transition">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-4xl mx-auto py-8">
+        <!-- Header -->
+        <header class="px-4 md:px-8 mb-8">
+            <div class="bg-green-700 text-white p-6 rounded-xl shadow-lg">
+                <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight">Personal Garden Tracker</h1>
+                <p class="mt-2 text-green-200">
+                    Welcome back, your garden awaits!
+                </p>
+                <!-- Removed user info as localStorage is single-user -->
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main id="main-content">
+            <!-- Loader -->
+            <div id="loader" class="flex flex-col items-center justify-center h-96">
+                <div class="animate-spin rounded-full h-16 w-16 border-b-2 border-green-500"></div>
+                <span class="mt-4 text-xl text-gray-700">Loading...</span>
+            </div>
+            <!-- Views will be dynamically rendered here -->
+        </main>
+    </div>
+
+    <script>
+        // Data is now stored in localStorage
+        let plants = [];
+        let selectedPlant = null;
+        let currentView = 'list';
+
+        // UI elements
+        const mainContent = document.getElementById('main-content');
+        const loader = document.getElementById('loader');
+        const modalContainer = document.getElementById('modal-container');
+        const modalMessage = document.getElementById('modal-message');
+        const modalConfirmBtn = document.getElementById('modal-confirm');
+        const modalCancelBtn = document.getElementById('modal-cancel');
+
+        // Custom modal for confirmations
+        const showConfirmModal = (message, onConfirm) => {
+            modalMessage.textContent = message;
+            modalConfirmBtn.style.display = 'inline-block';
+            modalCancelBtn.textContent = 'Cancel';
+            modalContainer.style.display = 'block';
+
+            const confirmHandler = () => {
+                onConfirm();
+                modalContainer.style.display = 'none';
+                modalConfirmBtn.removeEventListener('click', confirmHandler);
+                modalCancelBtn.removeEventListener('click', cancelHandler);
+            };
+
+            const cancelHandler = () => {
+                modalContainer.style.display = 'none';
+                modalConfirmBtn.removeEventListener('click', confirmHandler);
+                modalCancelBtn.removeEventListener('click', cancelHandler);
+            };
+
+            modalConfirmBtn.addEventListener('click', confirmHandler);
+            modalCancelBtn.addEventListener('click', cancelHandler);
+        };
+        
+        // --- Data Functions for localStorage ---
+        const savePlantsToLocalStorage = () => {
+            localStorage.setItem('gardeningPlants', JSON.stringify(plants));
+        };
+
+        const loadPlantsFromLocalStorage = () => {
+            const storedPlants = localStorage.getItem('gardeningPlants');
+            if (storedPlants) {
+                plants = JSON.parse(storedPlants);
+            }
+        };
+
+        const addPlant = (plant) => {
+            const newPlant = {
+                ...plant,
+                id: Date.now().toString(), // Simple unique ID
+                plantedDate: new Date(plant.plantedDate + 'T12:00:00').toISOString(),
+                growthHistory: [],
+            };
+            plants.push(newPlant);
+            savePlantsToLocalStorage();
+            currentView = 'list';
+            renderView();
+        };
+
+        const updatePlant = (plantId, newData) => {
+            const plantIndex = plants.findIndex(p => p.id === plantId);
+            if (plantIndex > -1) {
+                const updatedData = { ...newData };
+                if (newData.plantedDate) {
+                    updatedData.plantedDate = new Date(newData.plantedDate + 'T12:00:00').toISOString();
+                }
+                plants[plantIndex] = { ...plants[plantIndex], ...updatedData };
+                savePlantsToLocalStorage();
+                currentView = 'list';
+                renderView();
+            }
+        };
+
+        const deletePlant = (plantId) => {
+            plants = plants.filter(p => p.id !== plantId);
+            savePlantsToLocalStorage();
+            renderView();
+        };
+
+        const addGrowthMeasurement = (plantId, measurement) => {
+            if (!measurement) {
+                modalMessage.textContent = "Please add a measurement to log growth.";
+                modalConfirmBtn.style.display = 'none';
+                modalCancelBtn.textContent = 'OK';
+                modalContainer.style.display = 'block';
+                return;
+            }
+
+            const plantIndex = plants.findIndex(p => p.id === plantId);
+            if (plantIndex > -1) {
+                const newEntry = {
+                    date: new Date().toISOString(),
+                    measurement: measurement,
+                };
+                plants[plantIndex].growthHistory.push(newEntry);
+                savePlantsToLocalStorage();
+                renderView();
+            }
+        };
+
+        // --- UI Rendering ---
+        const renderPlantList = () => {
+            const plantListHtml = `
+                <div class="p-4 md:p-8">
+                    <h1 class="text-3xl font-bold text-gray-800 mb-6">Your Plants</h1>
+                    <button id="add-plant-btn" class="bg-green-600 text-white px-6 py-3 rounded-xl shadow-md hover:bg-green-700 transition duration-300 transform hover:scale-105 mb-6">
+                        Add New Plant
+                    </button>
+                    <div id="plants-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        ${plants.length > 0 ? plants.map(plant => `
+                            <div class="bg-gray-100 p-6 rounded-xl shadow-md border border-gray-200">
+                                <h2 class="text-2xl font-semibold text-gray-900 truncate">${plant.name}</h2>
+                                <p class="text-gray-600 text-sm mt-1 mb-4">Planted: ${new Date(plant.plantedDate).toLocaleDateString()}</p>
+                                <div class="flex space-x-2">
+                                    <button class="bg-green-500 text-white px-4 py-2 rounded-xl shadow-md text-sm hover:bg-green-600 transition"
+                                        onclick="window.viewPlantDetails('${plant.id}')">Details</button>
+                                    <button class="bg-yellow-500 text-white px-4 py-2 rounded-xl shadow-md text-sm hover:bg-yellow-600 transition"
+                                        onclick="window.editPlant('${plant.id}')">Edit</button>
+                                    <button class="bg-red-500 text-white px-4 py-2 rounded-xl shadow-md text-sm hover:bg-red-600 transition"
+                                        onclick="window.confirmDelete('${plant.id}', '${plant.name}')">Delete</button>
+                                </div>
+                            </div>
+                        `).join('') : '<p class="text-gray-500">You don\'t have any plants yet. Add one to get started!</p>'}
+                    </div>
+                </div>
+            `;
+            mainContent.innerHTML = plantListHtml;
+            document.getElementById('add-plant-btn').addEventListener('click', () => { currentView = 'add'; renderView(); });
+        };
+
+        const renderPlantForm = (plant = null) => {
+            const isEditing = plant !== null;
+            const formHtml = `
+                <div class="p-4 md:p-8">
+                    <h1 class="text-3xl font-bold text-gray-800 mb-6">${isEditing ? 'Edit Plant' : 'Add New Plant'}</h1>
+                    <form id="plant-form" class="bg-white p-8 rounded-xl shadow-md border border-gray-200">
+                        <div class="mb-4">
+                            <label class="block text-gray-700 font-bold mb-2" for="name">Plant Name</label>
+                            <input type="text" name="name" id="name" value="${plant?.name || ''}" required class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:border-green-500" />
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-gray-700 font-bold mb-2" for="plantedDate">Planted Date</label>
+                            <input type="date" name="plantedDate" id="plantedDate" value="${plant?.plantedDate ? new Date(plant.plantedDate).toISOString().substr(0, 10) : ''}" required class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:border-green-500" />
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-gray-700 font-bold mb-2" for="wateringSchedule">Watering Schedule</label>
+                            <input type="text" name="wateringSchedule" id="wateringSchedule" value="${plant?.wateringSchedule || ''}" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:border-green-500" placeholder="e.g., 'Every 3 days'" />
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-gray-700 font-bold mb-2" for="nutrientSchedule">Nutrient Schedule</label>
+                            <input type="text" name="nutrientSchedule" id="nutrientSchedule" value="${plant?.nutrientSchedule || ''}" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:border-green-500" placeholder="e.g., 'Weekly, at 1/2 strength'" />
+                        </div>
+                        <div class="mb-4">
+                            <label class="block text-gray-700 font-bold mb-2" for="lightSchedule">Light Schedule</label>
+                            <input type="text" name="lightSchedule" id="lightSchedule" value="${plant?.lightSchedule || ''}" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:border-green-500" placeholder="e.g., '18 hours on, 6 hours off'" />
+                        </div>
+                        <div class="flex justify-end space-x-4 mt-6">
+                            <button type="button" id="cancel-form-btn" class="bg-gray-400 text-white px-6 py-3 rounded-xl shadow-md hover:bg-gray-500 transition duration-300">Cancel</button>
+                            <button type="submit" class="bg-green-600 text-white px-6 py-3 rounded-xl shadow-md hover:bg-green-700 transition duration-300 transform hover:scale-105">
+                                ${isEditing ? 'Save Changes' : 'Add Plant'}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            `;
+            mainContent.innerHTML = formHtml;
+            document.getElementById('cancel-form-btn').addEventListener('click', () => { currentView = 'list'; renderView(); });
+            document.getElementById('plant-form').addEventListener('submit', (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const data = Object.fromEntries(formData.entries());
+                if (isEditing) {
+                    updatePlant(plant.id, data);
+                } else {
+                    addPlant(data);
+                }
+            });
+        };
+
+        const renderPlantDetails = (plant) => {
+            const detailsHtml = `
+                <div class="p-4 md:p-8">
+                    <button id="back-to-list" class="bg-gray-400 text-white px-4 py-2 rounded-xl shadow-md hover:bg-gray-500 transition mb-6">
+                        &larr; Back to List
+                    </button>
+                    <h1 class="text-3xl font-bold text-gray-800 mb-2">${plant.name}</h1>
+                    <p class="text-gray-600 text-sm">Planted: ${new Date(plant.plantedDate).toLocaleDateString()}</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mt-8">
+                        <div class="bg-gray-100 p-6 rounded-xl shadow-md border border-gray-200">
+                            <h3 class="text-xl font-bold text-gray-800 mb-4">Schedules</h3>
+                            <p class="text-gray-700 mb-2"><strong>Watering:</strong> ${plant.wateringSchedule || 'Not set'}</p>
+                            <p class="text-gray-700 mb-2"><strong>Nutrients:</strong> ${plant.nutrientSchedule || 'Not set'}</p>
+                            <p class="text-gray-700"><strong>Light:</strong> ${plant.lightSchedule || 'Not set'}</p>
+                        </div>
+                        <div class="bg-gray-100 p-6 rounded-xl shadow-md border border-gray-200">
+                            <h3 class="text-xl font-bold text-gray-800 mb-4">Growth History</h3>
+                            <div class="space-y-4">
+                                ${plant.growthHistory.length > 0 ? plant.growthHistory.sort((a, b) => new Date(b.date) - new Date(a.date)).map(entry => `
+                                    <div class="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+                                        <p class="text-gray-800 font-semibold">${entry.measurement}</p>
+                                        <p class="text-gray-600 text-sm mt-1">${new Date(entry.date).toLocaleString()}</p>
+                                    </div>
+                                `).join('') : `<p class="text-gray-500">No growth measurements logged yet.</p>`}
+                            </div>
+                            <div class="mt-6">
+                                <label class="block text-gray-700 font-bold mb-2">Log New Measurement</label>
+                                <input type="text" id="newGrowthMeasurement" class="w-full p-3 border border-gray-300 rounded-xl focus:outline-none focus:border-green-500" placeholder="e.g., 'Height: 15cm', 'New leaves emerging'" />
+                                <button id="add-growth-btn" class="w-full bg-green-600 text-white py-3 rounded-xl shadow-md hover:bg-green-700 transition duration-300 mt-4">Add Measurement</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            mainContent.innerHTML = detailsHtml;
+            document.getElementById('back-to-list').addEventListener('click', () => { currentView = 'list'; renderView(); });
+            
+            const newGrowthMeasurementInput = document.getElementById('newGrowthMeasurement');
+            document.getElementById('add-growth-btn').addEventListener('click', () => {
+                const measurement = newGrowthMeasurementInput.value;
+                addGrowthMeasurement(plant.id, measurement);
+                newGrowthMeasurementInput.value = '';
+            });
+        };
+
+        const renderView = () => {
+            loader.classList.add('hidden');
+            switch (currentView) {
+                case 'list':
+                    renderPlantList();
+                    break;
+                case 'add':
+                    renderPlantForm();
+                    break;
+                case 'edit':
+                    renderPlantForm(selectedPlant);
+                    break;
+                case 'details':
+                    renderPlantDetails(selectedPlant);
+                    break;
+                default:
+                    renderPlantList();
+            }
+        };
+
+        // --- Event Handlers & Initial Setup ---
+        window.viewPlantDetails = (plantId) => {
+            selectedPlant = plants.find(p => p.id === plantId);
+            currentView = 'details';
+            renderView();
+        };
+
+        window.editPlant = (plantId) => {
+            selectedPlant = plants.find(p => p.id === plantId);
+            currentView = 'edit';
+            renderView();
+        };
+
+        window.confirmDelete = (plantId, plantName) => {
+            showConfirmModal(`Are you sure you want to delete ${plantName}?`, () => {
+                deletePlant(plantId);
+            });
+        };
+
+        // Load data and render on page load
+        window.onload = () => {
+            loadPlantsFromLocalStorage();
+            renderView();
+        };
+
+    </script>
+</body>
+</html>
